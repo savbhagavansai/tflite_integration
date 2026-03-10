@@ -51,10 +51,16 @@ dependencies {
     implementation "androidx.camera:camera-lifecycle:$camerax_version"
     implementation "androidx.camera:camera-view:$camerax_version"
     
-    // MediaPipe Tasks Vision
-    implementation 'com.google.mediapipe:tasks-vision:0.10.9'
-    
-    // ONNX Runtime - UPGRADED to support opset 18
+    // ═══════════════════════════════════════════════════════════════
+    // TensorFlow Lite - Hand Tracking (NEW - replaces MediaPipe Tasks)
+    // ═══════════════════════════════════════════════════════════════
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+
+    // ═══════════════════════════════════════════════════════════════
+    // ONNX Runtime - Gesture Classification (KEEP - for TCN model on NPU)
+    // ═══════════════════════════════════════════════════════════════
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.19.2'
 
     // Coroutines

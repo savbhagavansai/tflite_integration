@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
     private var useFrontCamera = true  // Start with front camera for tablets
 
     // Gesture Recognition
-    private var gestureRecognizer: GestureRecognizerONNX? = null
+    private var gestureRecognizer: GestureRecognizerHybrid? = null
 
     // FPS tracking
     private val fpsBuffer = mutableListOf<Long>()
@@ -72,7 +72,7 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize gesture recognizer
         try {
-            gestureRecognizer = GestureRecognizerONNX(this)
+            gestureRecognizer = GestureRecognizerHybrid(this)
             Log.d(TAG, "GestureRecognizer initialized")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize GestureRecognizer", e)
@@ -221,29 +221,29 @@ class MainActivity : AppCompatActivity() {
                 lifecycleScope.launch(Dispatchers.Default) {
                     try {
                         // Process frame with RAW landmarks (for model)
-                        val onnxResult = gestureRecognizer?.processFrame(bitmap)
+                        val hybridResult = gestureRecognizer?.processFrame(bitmap)
 
-                        // Extract gesture result and landmarks from onnxResult
-                        val landmarks = onnxResult?.landmarks
+                        // Extract gesture result and landmarks from hybridResult
+                        val landmarks = hybridResult?.landmarks
 
-                        val result = if (onnxResult?.gestureResult != null) {
-                            onnxResult.gestureResult
-                        } else if (onnxResult != null) {
+                        val result = if (hybridResult?.gestureResult != null) {
+                            hybridResult.gestureResult
+                        } else if (hybridResult != null) {
                             // Show timing even when buffer not full
                             GestureResult(
                                 gesture = "buffering",
                                 confidence = 0f,
                                 allProbabilities = FloatArray(Config.NUM_CLASSES),
-                                handDetectorTimeMs = onnxResult.handTracking.detectorTimeMs.toDouble(),
-                                landmarksTimeMs = onnxResult.handTracking.landmarkTimeMs.toDouble(),
+                                handDetectorTimeMs = hybridResult.handTracking.detectorTimeMs.toDouble(),
+                                landmarksTimeMs = hybridResult.handTracking.landmarkTimeMs.toDouble(),
                                 gestureTimeMs = 0.0,
-                                totalTimeMs = onnxResult.handTracking.totalTimeMs.toDouble(),
-                                wasTracking = onnxResult.handTracking.wasTracking
+                                totalTimeMs = hybridResult.handTracking.totalTimeMs.toDouble(),
+                                wasTracking = hybridResult.handTracking.wasTracking
                             )
                         } else {
                             null
                         }
-                        currentLandmarks = landmarks
+                                                currentLandmarks = landmarks
 
                         // Calculate FPS
                         val fps = calculateFPS(currentTime)
