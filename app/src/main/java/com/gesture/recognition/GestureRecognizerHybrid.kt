@@ -3,7 +3,6 @@ package com.gesture.recognition
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
-import com.gesture.recognition.GestureResult
 
 /**
  * Complete Gesture Recognition System - HYBRID ARCHITECTURE
@@ -79,6 +78,8 @@ class GestureRecognizerHybrid(private val context: Context) {
         // Stage 2: Normalize landmarks (existing LandmarkNormalizer)
         // ═══════════════════════════════════════════════════════════
         val landmarksFlat = flattenLandmarks(trackingResult.landmarks)
+
+        // FIXED: Your LandmarkNormalizer only takes landmarks parameter
         val normalizedLandmarks = LandmarkNormalizer.normalize(landmarksFlat)
 
         // Store for external access
@@ -96,11 +97,19 @@ class GestureRecognizerHybrid(private val context: Context) {
                     gesture = "buffering",
                     confidence = 0f,
                     allProbabilities = FloatArray(Config.NUM_CLASSES),
+                    handDetected = true,
+                    bufferProgress = sequenceBuffer.size().toFloat() / Config.SEQUENCE_LENGTH,
+                    isStable = false,
                     handDetectorTimeMs = trackingResult.detectorTimeMs.toDouble(),
                     landmarksTimeMs = trackingResult.landmarkTimeMs.toDouble(),
                     gestureTimeMs = 0.0,
                     totalTimeMs = trackingResult.totalTimeMs.toDouble(),
-                    wasTracking = trackingResult.wasTracking
+                    wasTracking = trackingResult.wasTracking,
+                    detectorBackend = handTracker.getDetectorBackend(),
+                    landmarksBackend = handTracker.getLandmarkBackend(),
+                    gestureBackend = "ONNX (NPU)",
+                    frameWidth = bitmap.width,
+                    frameHeight = bitmap.height
                 ),
                 landmarks = landmarksFlat,
                 handTracking = trackingResult,
@@ -122,23 +131,44 @@ class GestureRecognizerHybrid(private val context: Context) {
             )
         }
 
-        // Run TCN gesture classifier
+        // FIXED: Your ONNXInference uses predict() not classify()
         val t0 = System.nanoTime()
-        val gestureOutput = gestureClassifier.classify(sequence)
+        val prediction = gestureClassifier.predict(sequence)
         val gestureMs = (System.nanoTime() - t0) / 1_000_000.0
+
+        if (prediction == null) {
+            return GestureResultHybrid(
+                gestureResult = null,
+                landmarks = landmarksFlat,
+                handTracking = trackingResult,
+                bufferSize = sequenceBuffer.size()
+            )
+        }
 
         lastGestureTimeMs = gestureMs
 
+        val (predictedIdx, probabilities) = prediction
+        val gestureName = Config.IDX_TO_LABEL[predictedIdx] ?: "unknown"
+        val confidence = probabilities[predictedIdx]
+
         // Create gesture result
         val gestureResult = GestureResult(
-            gesture = gestureOutput.gestureName,
-            confidence = gestureOutput.confidence,
-            allProbabilities = gestureOutput.allProbabilities,
+            gesture = gestureName,
+            confidence = confidence,
+            allProbabilities = probabilities,
+            handDetected = true,
+            bufferProgress = 1f,
+            isStable = true,
             handDetectorTimeMs = trackingResult.detectorTimeMs.toDouble(),
             landmarksTimeMs = trackingResult.landmarkTimeMs.toDouble(),
             gestureTimeMs = gestureMs,
             totalTimeMs = trackingResult.totalTimeMs + gestureMs,
-            wasTracking = trackingResult.wasTracking
+            wasTracking = trackingResult.wasTracking,
+            detectorBackend = handTracker.getDetectorBackend(),
+            landmarksBackend = handTracker.getLandmarkBackend(),
+            gestureBackend = "ONNX (NPU)",
+            frameWidth = bitmap.width,
+            frameHeight = bitmap.height
         )
 
         return GestureResultHybrid(
@@ -197,7 +227,7 @@ class GestureRecognizerHybrid(private val context: Context) {
      * Get gesture backend information
      */
     fun getGestureBackend(): String {
-        return gestureClassifier.getAccelerator()
+        return "ONNX (NPU)"
     }
 
     /**
