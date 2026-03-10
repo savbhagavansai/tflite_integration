@@ -3,6 +3,7 @@ package com.gesture.recognition
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.gesture.recognition.GestureResult
 
 /**
  * Complete Gesture Recognition System - HYBRID ARCHITECTURE
@@ -78,11 +79,7 @@ class GestureRecognizerHybrid(private val context: Context) {
         // Stage 2: Normalize landmarks (existing LandmarkNormalizer)
         // ═══════════════════════════════════════════════════════════
         val landmarksFlat = flattenLandmarks(trackingResult.landmarks)
-        val normalizedLandmarks = LandmarkNormalizer.normalize(
-            landmarksFlat,
-            bitmap.width,
-            bitmap.height
-        )
+        val normalizedLandmarks = LandmarkNormalizer.normalize(landmarksFlat)
 
         // Store for external access
         lastLandmarks = landmarksFlat
@@ -221,18 +218,4 @@ data class GestureResultHybrid(
     val landmarks: FloatArray?,
     val handTracking: HandTrackingResult,
     val bufferSize: Int
-)
-
-/**
- * Gesture result (compatible with existing code)
- */
-data class GestureResult(
-    val gesture: String,
-    val confidence: Float,
-    val allProbabilities: FloatArray,
-    val handDetectorTimeMs: Double,
-    val landmarksTimeMs: Double,
-    val gestureTimeMs: Double,
-    val totalTimeMs: Double,
-    val wasTracking: Boolean
 )
