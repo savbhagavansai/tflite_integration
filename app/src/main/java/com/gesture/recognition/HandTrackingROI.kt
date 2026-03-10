@@ -109,7 +109,9 @@ object HandTrackingROI {
             centerY = cyA,
             width = wA,
             height = hA,
-            rectPoints = rectPoints
+            rectPoints = rectPoints,
+            frameWidth = frameWidth,   // ← ADD
+            frameHeight = frameHeight  // ← ADD
         )
     }
 
