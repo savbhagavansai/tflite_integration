@@ -29,9 +29,18 @@ object FileLogger {
         if (isInitialized) return
 
         try {
-            // Create log file in app's external files directory
-            // This is accessible without root via file manager
-            val logDir = context.getExternalFilesDir(null)
+            // Save to Downloads folder - MUCH easier to access!
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS
+            )
+
+            // Create subdirectory for organization
+            val logDir = File(downloadsDir, "GestureRecognition")
+            if (!logDir.exists()) {
+                logDir.mkdirs()
+                android.util.Log.d("FileLogger", "Created log directory: ${logDir.absolutePath}")
+            }
+
             val file = File(logDir, "debug_log.txt")
 
             // Open in append mode
@@ -48,6 +57,7 @@ object FileLogger {
 
         } catch (e: Exception) {
             e.printStackTrace()
+            android.util.Log.e("FileLogger", "Failed to initialize FileLogger", e)
         }
     }
 

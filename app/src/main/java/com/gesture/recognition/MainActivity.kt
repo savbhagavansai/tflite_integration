@@ -63,22 +63,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Storage permission launcher (for logging to Downloads)
+    private val requestStoragePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(this, "Logging to Downloads/GestureRecognition/", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Storage permission denied - logs disabled", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         // ═══════════════════════════════════════════════════════════
-        // Initialize FileLogger
+        // Request storage permission for logging (Android 10+)
+        // ═══════════════════════════════════════════════════════════
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            // Android 10+ doesn't need WRITE_EXTERNAL_STORAGE for Downloads
+            // But check just in case
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Initialize FileLogger (saves to Downloads/GestureRecognition/)
         // ═══════════════════════════════════════════════════════════
         FileLogger.init(this)
         FileLogger.section("MainActivity onCreate()")
         FileLogger.i(TAG, "App started - processing at 640x480")
+        FileLogger.i(TAG, "Log location: Downloads/GestureRecognition/debug_log.txt")
 
         // Check if TFLite models exist in assets
         try {
             val detectorSize = assets.open("mediapipe_hand-handdetector.tflite").available()
             val landmarkSize = assets.open("mediapipe_hand-handlandmarkdetector.tflite").available()
-            val gestureSize = assets.open("gesture_model_android.onnx").available()
+            val gestureSize = assets.open("gesture_model.onnx").available()
 
             FileLogger.i(TAG, "✓ Model files found:")
             FileLogger.i(TAG, "  - HandDetector: ${detectorSize/1024}KB")
@@ -87,7 +114,7 @@ class MainActivity : AppCompatActivity() {
 
             Toast.makeText(
                 this,
-                "Models OK!\nDetector: ${detectorSize/1024}KB\nLandmark: ${landmarkSize/1024}KB\nGesture: ${gestureSize/1024}KB",
+                "Models OK!\nLogs: Downloads/GestureRecognition/\nDetector: ${detectorSize/1024}KB\nLandmark: ${landmarkSize/1024}KB",
                 Toast.LENGTH_LONG
             ).show()
 
