@@ -45,8 +45,8 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
 
     // Input/output buffers
     private lateinit var inputBuffer: ByteBuffer
-    private lateinit var outputScores: Array<FloatArray>
-    private lateinit var outputHandedness: Array<FloatArray>
+    private lateinit var outputScores: FloatArray  // Changed from Array<FloatArray>
+    private lateinit var outputHandedness: FloatArray  // Changed from Array<FloatArray>
     private lateinit var outputLandmarks: Array<Array<FloatArray>>
 
     init {
@@ -130,11 +130,11 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
         inputBuffer = ByteBuffer.allocateDirect(1 * INPUT_SIZE * INPUT_SIZE * 3 * 4)
         inputBuffer.order(ByteOrder.nativeOrder())
 
-        // Output 0: scores [1] (presence score)
-        outputScores = Array(1) { FloatArray(1) }
+        // FIXED: Output 0: scores [1] - single float value
+        outputScores = FloatArray(1)
 
-        // Output 1: handedness [1] (left/right)
-        outputHandedness = Array(1) { FloatArray(1) }
+        // FIXED: Output 1: handedness [1] - single float value
+        outputHandedness = FloatArray(1)
 
         // Output 2: landmarks [1, 21, 3] (x, y, z)
         outputLandmarks = Array(1) { Array(NUM_LANDMARKS) { FloatArray(3) } }
@@ -177,8 +177,8 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
             interpreter?.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputs)
             FileLogger.d(TAG, "✓ Inference completed")
 
-            // Check presence
-            val presence = outputScores[0][0]
+            // Check presence - FIXED: access as FloatArray[0] not [0][0]
+            val presence = outputScores[0]
             FileLogger.d(TAG, "Presence score: $presence (threshold: $PRESENCE_THRESH)")
 
             if (presence < PRESENCE_THRESH) {
@@ -191,8 +191,8 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
             val landmarksNormalized = outputLandmarks[0]  // [21, 3] in [0, 1]
             val landmarksFrame = unprojectLandmarks(landmarksNormalized, roi)
 
-            // Determine handedness
-            val handedness = if (outputHandedness[0][0] > 0.5f) "Right" else "Left"
+            // Determine handedness - FIXED: access as FloatArray[0] not [0][0]
+            val handedness = if (outputHandedness[0] > 0.5f) "Right" else "Left"
             FileLogger.d(TAG, "✓ Landmarks detected! Handedness: $handedness, Presence: $presence")
 
             return LandmarkResult(
