@@ -230,8 +230,9 @@ class GestureOverlayView @JvmOverloads constructor(
 
         // Transform all 21 landmarks using CACHED scale/offset
         for (i in 0 until 21) {
-            val rawX = lm[i * 3]
-            val rawY = lm[i * 3 + 1]
+            // FIXED: Landmarks are in PIXEL coordinates, normalize them first
+            val rawX = lm[i * 3] / imageWidth.toFloat()  // Normalize to [0,1]
+            val rawY = lm[i * 3 + 1] / imageHeight.toFloat()  // Normalize to [0,1]
 
             // Apply rotation
             val (rotatedX, rotatedY) = transformCoordinate(rawX, rawY, rotation)
