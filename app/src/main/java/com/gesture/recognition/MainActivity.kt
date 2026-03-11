@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val detectorSize = assets.open("mediapipe_hand-handdetector.tflite").available()
             val landmarkSize = assets.open("mediapipe_hand-handlandmarkdetector.tflite").available()
-            val gestureSize = assets.open("gesture_model.onnx").available()
+            val gestureSize = assets.open("gesture_model_android.onnx").available()
 
             FileLogger.i(TAG, "✓ Model files found:")
             FileLogger.i(TAG, "  - HandDetector: ${detectorSize/1024}KB")
