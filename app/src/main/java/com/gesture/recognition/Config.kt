@@ -23,7 +23,7 @@ object Config {
     const val NUM_CLASSES = 11      // Number of gesture classes
     
     // ==================== MODEL FILE ====================
-    const val ONNX_MODEL_FILENAME = "gesture_model_android.onnx"
+    const val ONNX_MODEL_FILENAME = "gesture_model.onnx"
 
     // ==================== INFERENCE PARAMETERS ====================
     const val CONFIDENCE_THRESHOLD = 0.6f  // Minimum confidence for prediction
