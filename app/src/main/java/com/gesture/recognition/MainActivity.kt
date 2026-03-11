@@ -67,15 +67,51 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // ═══════════════════════════════════════════════════════════
+        // Initialize FileLogger
+        // ═══════════════════════════════════════════════════════════
+        FileLogger.init(this)
+        FileLogger.section("MainActivity onCreate()")
+        FileLogger.i(TAG, "App started - processing at 640x480")
+
+        // Check if TFLite models exist in assets
+        try {
+            val detectorSize = assets.open("mediapipe_hand-handdetector.tflite").available()
+            val landmarkSize = assets.open("mediapipe_hand-handlandmarkdetector.tflite").available()
+            val gestureSize = assets.open("gesture_model.onnx").available()
+
+            FileLogger.i(TAG, "✓ Model files found:")
+            FileLogger.i(TAG, "  - HandDetector: ${detectorSize/1024}KB")
+            FileLogger.i(TAG, "  - HandLandmark: ${landmarkSize/1024}KB")
+            FileLogger.i(TAG, "  - Gesture: ${gestureSize/1024}KB")
+
+            Toast.makeText(
+                this,
+                "Models OK!\nDetector: ${detectorSize/1024}KB\nLandmark: ${landmarkSize/1024}KB\nGesture: ${gestureSize/1024}KB",
+                Toast.LENGTH_LONG
+            ).show()
+
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "❌ MODEL FILE ERROR!", e)
+            Toast.makeText(
+                this,
+                "❌ MODEL ERROR: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+
         // Initialize UI
         initializeViews()
 
         // Initialize gesture recognizer
         try {
+            FileLogger.section("Initializing Gesture Recognizer")
             gestureRecognizer = GestureRecognizerHybrid(this)
             Log.d(TAG, "GestureRecognizer initialized")
+            FileLogger.i(TAG, "✓ Gesture Recognizer initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize GestureRecognizer", e)
+            FileLogger.e(TAG, "CRITICAL: Failed to initialize GestureRecognizer!", e)
             Toast.makeText(this, "Failed to load model: ${e.message}", Toast.LENGTH_LONG).show()
             finish()
             return
@@ -220,8 +256,33 @@ class MainActivity : AppCompatActivity() {
             if (bitmap != null) {
                 lifecycleScope.launch(Dispatchers.Default) {
                     try {
+                        // Log every 30th frame to avoid spam
+                        val shouldLog = frameCount <= 10 || frameCount % 30 == 0
+
+                        if (shouldLog) {
+                            FileLogger.separator()
+                            FileLogger.d(TAG, "Frame #$frameCount: ${bitmap.width}x${bitmap.height}, rotation=$imageRotation")
+                        }
+
                         // Process frame with RAW landmarks (for model)
                         val hybridResult = gestureRecognizer?.processFrame(bitmap)
+
+                        // Log result details
+                        if (shouldLog) {
+                            if (hybridResult == null) {
+                                FileLogger.d(TAG, "Result: NULL (no hand detected)")
+                            } else {
+                                FileLogger.d(TAG, "Result received:")
+                                FileLogger.d(TAG, "  - Landmarks: ${hybridResult.landmarks?.size ?: 0} values")
+                                FileLogger.d(TAG, "  - Gesture: ${hybridResult.gestureResult?.gesture ?: "buffering"}")
+                                FileLogger.d(TAG, "  - Confidence: ${hybridResult.gestureResult?.confidence ?: 0f}")
+                                FileLogger.d(TAG, "  - Buffer: ${hybridResult.bufferSize}/${Config.SEQUENCE_LENGTH}")
+                                FileLogger.d(TAG, "  - Detector: ${hybridResult.handTracking.detectorTimeMs}ms")
+                                FileLogger.d(TAG, "  - Landmark: ${hybridResult.handTracking.landmarkTimeMs}ms")
+                                FileLogger.d(TAG, "  - Total: ${hybridResult.handTracking.totalTimeMs}ms")
+                                FileLogger.d(TAG, "  - Was Tracking: ${hybridResult.handTracking.wasTracking}")
+                            }
+                        }
 
                         // Extract gesture result and landmarks from hybridResult
                         val landmarks = hybridResult?.landmarks
@@ -243,7 +304,7 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             null
                         }
-                                                currentLandmarks = landmarks
+                        currentLandmarks = landmarks
 
                         // Calculate FPS
                         val fps = calculateFPS(currentTime)
@@ -372,9 +433,15 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
 
+        FileLogger.section("MainActivity onDestroy()")
+        FileLogger.i(TAG, "App closing - processed $frameCount frames")
+
         cameraExecutor?.shutdown()
         gestureRecognizer?.close()
         cameraProvider?.unbindAll()
+
+        // Close file logger
+        FileLogger.close()
 
         Log.d(TAG, "MainActivity destroyed")
     }

@@ -52,6 +52,7 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
     init {
         Log.d(TAG, "════════════════════════════════════════")
         Log.d(TAG, "Initializing Landmark Detector (TFLite)")
+        FileLogger.section("Initializing Landmark Detector (TFLite)")
 
         // Load model with delegates
         loadModel()
@@ -61,6 +62,7 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
 
         Log.d(TAG, "✓ Landmark Detector ready on $actualBackend")
         Log.d(TAG, "════════════════════════════════════════")
+        FileLogger.i(TAG, "✓ Landmark Detector ready on $actualBackend")
     }
 
     /**
@@ -146,33 +148,52 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
      * @return LandmarkResult or null if presence too low
      */
     fun detectLandmarks(frame: Bitmap, roi: HandROI): LandmarkResult? {
+        FileLogger.d(TAG, "detectLandmarks() called")
+
+        // Check if interpreter is initialized
+        if (interpreter == null) {
+            FileLogger.e(TAG, "❌ Interpreter is NULL! Model failed to load!")
+            return null
+        }
+
         try {
             // Warp ROI to 256×256 square (affine transform)
+            FileLogger.d(TAG, "Warping ROI to 256x256...")
             val warped = warpROI(frame, roi)
+            FileLogger.d(TAG, "✓ ROI warped")
 
             // Preprocess
+            FileLogger.d(TAG, "Preprocessing...")
             preprocessImage(warped)
+            FileLogger.d(TAG, "✓ Preprocessing done")
 
             // Run inference
+            FileLogger.d(TAG, "Running inference...")
             val outputs = mapOf(
                 0 to outputScores,
                 1 to outputHandedness,
                 2 to outputLandmarks
             )
             interpreter?.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputs)
+            FileLogger.d(TAG, "✓ Inference completed")
 
             // Check presence
             val presence = outputScores[0][0]
+            FileLogger.d(TAG, "Presence score: $presence (threshold: $PRESENCE_THRESH)")
+
             if (presence < PRESENCE_THRESH) {
+                FileLogger.d(TAG, "Hand presence too low, returning null")
                 return null
             }
 
             // Unproject landmarks back to frame coordinates
+            FileLogger.d(TAG, "Unprojecting landmarks to frame coordinates...")
             val landmarksNormalized = outputLandmarks[0]  // [21, 3] in [0, 1]
             val landmarksFrame = unprojectLandmarks(landmarksNormalized, roi)
 
             // Determine handedness
             val handedness = if (outputHandedness[0][0] > 0.5f) "Right" else "Left"
+            FileLogger.d(TAG, "✓ Landmarks detected! Handedness: $handedness, Presence: $presence")
 
             return LandmarkResult(
                 landmarks = landmarksFrame,
@@ -182,6 +203,7 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
 
         } catch (e: Exception) {
             Log.e(TAG, "Landmark detection failed", e)
+            FileLogger.e(TAG, "Landmark detection failed!", e)
             return null
         }
     }

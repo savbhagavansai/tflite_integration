@@ -62,10 +62,12 @@ class HandDetectorTFLite(private val context: Context) {
     init {
         Log.d(TAG, "════════════════════════════════════════")
         Log.d(TAG, "Initializing Hand Detector (TFLite)")
+        FileLogger.section("Initializing Hand Detector (TFLite)")
 
         // Generate anchors
         anchors = generateAnchors()
         Log.d(TAG, "✓ Generated ${anchors.size / 4} anchors")
+        FileLogger.d(TAG, "✓ Generated ${anchors.size / 4} anchors")
 
         // Load model with delegates
         loadModel()
@@ -75,6 +77,7 @@ class HandDetectorTFLite(private val context: Context) {
 
         Log.d(TAG, "✓ Hand Detector ready on $actualBackend")
         Log.d(TAG, "════════════════════════════════════════")
+        FileLogger.i(TAG, "✓ Hand Detector ready on $actualBackend")
     }
 
     /**
@@ -82,13 +85,17 @@ class HandDetectorTFLite(private val context: Context) {
      */
     private fun loadModel() {
         try {
+            FileLogger.d(TAG, "Loading model: $MODEL_NAME")
             val modelBuffer = loadModelFile(context, MODEL_NAME)
+            FileLogger.d(TAG, "✓ Model file loaded: ${modelBuffer.capacity() / 1024}KB")
+
             val options = Interpreter.Options()
 
             // ═══════════════════════════════════════════════════════
             // TIER 1: Try NNAPI (NPU preferred)
             // ═══════════════════════════════════════════════════════
             try {
+                FileLogger.d(TAG, "Attempting NNAPI delegate...")
                 nnApiDelegate = NnApiDelegate(
                     NnApiDelegate.Options().apply {
                         // FAST_SINGLE_ANSWER = prefer NPU over GPU
@@ -101,36 +108,46 @@ class HandDetectorTFLite(private val context: Context) {
                 options.addDelegate(nnApiDelegate)
                 actualBackend = "NNAPI (NPU preferred)"
                 Log.d(TAG, "✓ Using NNAPI delegate (NPU preferred)")
+                FileLogger.i(TAG, "✓ Using NNAPI delegate (NPU preferred)")
 
             } catch (e: Exception) {
                 Log.w(TAG, "NNAPI delegate failed: ${e.message}")
+                FileLogger.w(TAG, "NNAPI delegate failed: ${e.message}")
 
                 // ═══════════════════════════════════════════════════════
                 // TIER 2: Try GPU Delegate
                 // ═══════════════════════════════════════════════════════
                 try {
+                    FileLogger.d(TAG, "Attempting GPU delegate...")
                     gpuDelegate = GpuDelegate()
                     options.addDelegate(gpuDelegate)
                     actualBackend = "GPU (OpenGL)"
                     Log.d(TAG, "✓ Using GPU delegate (fallback)")
+                    FileLogger.i(TAG, "✓ Using GPU delegate (fallback)")
 
                 } catch (e2: Exception) {
                     Log.w(TAG, "GPU delegate failed: ${e2.message}")
+                    FileLogger.w(TAG, "GPU delegate failed: ${e2.message}")
 
                     // ═══════════════════════════════════════════════════════
                     // TIER 3: CPU with threading
                     // ═══════════════════════════════════════════════════════
+                    FileLogger.d(TAG, "Falling back to CPU with 4 threads")
                     options.setNumThreads(4)
                     actualBackend = "CPU (4 threads)"
                     Log.d(TAG, "✓ Using CPU with 4 threads (fallback)")
+                    FileLogger.i(TAG, "✓ Using CPU with 4 threads (fallback)")
                 }
             }
 
+            FileLogger.d(TAG, "Creating TFLite interpreter...")
             interpreter = Interpreter(modelBuffer, options)
             Log.d(TAG, "✓ Model loaded: ${modelBuffer.capacity() / 1024}KB")
+            FileLogger.i(TAG, "✓ TFLite interpreter created successfully")
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model", e)
+            FileLogger.e(TAG, "CRITICAL: Failed to load model!", e)
             throw e
         }
     }
@@ -189,22 +206,44 @@ class HandDetectorTFLite(private val context: Context) {
      * @return HandDetection or null if no hand detected
      */
     fun detectHand(bitmap: Bitmap): HandDetection? {
+        FileLogger.d(TAG, "detectHand() called: ${bitmap.width}x${bitmap.height}")
+
+        // Check if interpreter is initialized
+        if (interpreter == null) {
+            FileLogger.e(TAG, "❌ Interpreter is NULL! Model failed to load!")
+            return null
+        }
+
         try {
             // Preprocess
+            FileLogger.d(TAG, "Preprocessing image...")
             preprocessImage(bitmap)
+            FileLogger.d(TAG, "✓ Preprocessing done")
 
             // Run inference
+            FileLogger.d(TAG, "Running inference...")
             val outputs = mapOf(
                 0 to outputBoxes,
                 1 to outputScores
             )
             interpreter?.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputs)
+            FileLogger.d(TAG, "✓ Inference completed")
 
             // Process detections
-            return processDetections(bitmap.width, bitmap.height)
+            FileLogger.d(TAG, "Processing detections...")
+            val result = processDetections(bitmap.width, bitmap.height)
+
+            if (result == null) {
+                FileLogger.d(TAG, "No hand detected (below threshold)")
+            } else {
+                FileLogger.d(TAG, "✓ Hand detected! Confidence: ${result.confidence}")
+            }
+
+            return result
 
         } catch (e: Exception) {
             Log.e(TAG, "Detection failed", e)
+            FileLogger.e(TAG, "Detection failed!", e)
             return null
         }
     }
