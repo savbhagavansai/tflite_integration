@@ -79,69 +79,112 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         // ═══════════════════════════════════════════════════════════
-        // Request storage permission for logging (Android 10+)
+        // Setup crash handler to log crashes
         // ═══════════════════════════════════════════════════════════
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            // Android 10+ doesn't need WRITE_EXTERNAL_STORAGE for Downloads
-            // But check just in case
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                FileLogger.e(TAG, "═══ APP CRASHED ═══", throwable)
+                FileLogger.close()
+            } catch (e: Exception) {
+                // Ignore
             }
+            defaultHandler?.uncaughtException(thread, throwable)
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // Initialize FileLogger (saves to Downloads/GestureRecognition/)
-        // ═══════════════════════════════════════════════════════════
-        FileLogger.init(this)
-        FileLogger.section("MainActivity onCreate()")
-        FileLogger.i(TAG, "App started - processing at 640x480")
-        FileLogger.i(TAG, "Log location: Downloads/GestureRecognition/debug_log.txt")
-
-        // Check if TFLite models exist in assets
         try {
-            val detectorSize = assets.open("mediapipe_hand-handdetector.tflite").available()
-            val landmarkSize = assets.open("mediapipe_hand-handlandmarkdetector.tflite").available()
-            val gestureSize = assets.open("gesture_model_android.onnx").available()
+            // ═══════════════════════════════════════════════════════════
+            // Request storage permission for logging (Android 10+)
+            // ═══════════════════════════════════════════════════════════
+            if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.P) {
+                // Only request for Android 9 and below
+                if (ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            }
 
-            FileLogger.i(TAG, "✓ Model files found:")
-            FileLogger.i(TAG, "  - HandDetector: ${detectorSize/1024}KB")
-            FileLogger.i(TAG, "  - HandLandmark: ${landmarkSize/1024}KB")
-            FileLogger.i(TAG, "  - Gesture: ${gestureSize/1024}KB")
+            // ═══════════════════════════════════════════════════════════
+            // Initialize FileLogger (saves to Downloads/GestureRecognition/)
+            // ═══════════════════════════════════════════════════════════
+            try {
+                FileLogger.init(this)
+                FileLogger.section("MainActivity onCreate()")
+                FileLogger.i(TAG, "App started - processing at 640x480")
+                FileLogger.i(TAG, "Android version: ${android.os.Build.VERSION.SDK_INT}")
+                FileLogger.i(TAG, "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                FileLogger.i(TAG, "Log location: Downloads/GestureRecognition/debug_log.txt")
+            } catch (e: Exception) {
+                Log.e(TAG, "FileLogger init failed (non-critical)", e)
+                Toast.makeText(this, "Logging disabled: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
 
-            Toast.makeText(
-                this,
-                "Models OK!\nLogs: Downloads/GestureRecognition/\nDetector: ${detectorSize/1024}KB\nLandmark: ${landmarkSize/1024}KB",
-                Toast.LENGTH_LONG
-            ).show()
+            // Check if TFLite models exist in assets
+            try {
+                val detectorSize = assets.open("mediapipe_hand-handdetector.tflite").available()
+                val landmarkSize = assets.open("mediapipe_hand-handlandmarkdetector.tflite").available()
+                val gestureSize = assets.open("gesture_model.onnx").available()
 
+                FileLogger.i(TAG, "✓ Model files found:")
+                FileLogger.i(TAG, "  - HandDetector: ${detectorSize/1024}KB")
+                FileLogger.i(TAG, "  - HandLandmark: ${landmarkSize/1024}KB")
+                FileLogger.i(TAG, "  - Gesture: ${gestureSize/1024}KB")
+
+                Toast.makeText(
+                    this,
+                    "Models OK!\nLogs: Downloads/GestureRecognition/\nDetector: ${detectorSize/1024}KB",
+                    Toast.LENGTH_LONG
+                ).show()
+
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "❌ MODEL FILE ERROR!", e)
+                Toast.makeText(
+                    this,
+                    "❌ MODEL ERROR: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         } catch (e: Exception) {
-            FileLogger.e(TAG, "❌ MODEL FILE ERROR!", e)
-            Toast.makeText(
-                this,
-                "❌ MODEL ERROR: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
+            Log.e(TAG, "Critical error in onCreate", e)
+            FileLogger.e(TAG, "Critical error in onCreate!", e)
+            Toast.makeText(this, "Startup error: ${e.message}", Toast.LENGTH_LONG).show()
         }
 
         // Initialize UI
         initializeViews()
 
-        // Initialize gesture recognizer
+        // Initialize gesture recognizer with detailed error logging
         try {
             FileLogger.section("Initializing Gesture Recognizer")
+            Log.d(TAG, "Creating GestureRecognizerHybrid...")
+
             gestureRecognizer = GestureRecognizerHybrid(this)
+
             Log.d(TAG, "GestureRecognizer initialized")
             FileLogger.i(TAG, "✓ Gesture Recognizer initialized successfully")
+
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize GestureRecognizer", e)
             FileLogger.e(TAG, "CRITICAL: Failed to initialize GestureRecognizer!", e)
-            Toast.makeText(this, "Failed to load model: ${e.message}", Toast.LENGTH_LONG).show()
-            finish()
-            return
+
+            // Show detailed error to user
+            val errorMsg = """
+                Failed to load gesture recognizer!
+
+                Error: ${e.javaClass.simpleName}
+                Message: ${e.message}
+
+                Check if all .tflite model files are in assets folder.
+            """.trimIndent()
+
+            Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show()
+
+            // Don't finish - let user see the error
+            // finish()
+            // return
         }
 
         // Initialize camera executor
