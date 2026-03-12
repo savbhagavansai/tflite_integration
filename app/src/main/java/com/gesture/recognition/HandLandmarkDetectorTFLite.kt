@@ -114,18 +114,8 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
             try {
                 FileLogger.d(TAG, "Attempting GPU delegate (Mali-G68)...")
 
-                gpuDelegate = GpuDelegate(
-                    GpuDelegate.Options().apply {
-                        // Fast inference for real-time
-                        setInferencePreference(GpuDelegate.Options.INFERENCE_PREFERENCE_FAST_SINGLE_ANSWER)
-
-                        // Allow FP16 for better performance
-                        setPrecisionLossAllowed(true)
-
-                        // Enable all optimizations
-                        setQuantizedModelsAllowed(true)
-                    }
-                )
+                // FIXED: Use simple GpuDelegate() constructor for TFLite 2.14.0
+                gpuDelegate = GpuDelegate()
 
                 options.addDelegate(gpuDelegate)
                 actualBackend = "GPU (Mali-G68 MP5)"
