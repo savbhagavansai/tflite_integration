@@ -54,6 +54,9 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
         Log.d(TAG, "Initializing Landmark Detector (TFLite)")
         FileLogger.section("Initializing Landmark Detector (TFLite)")
 
+        // DIAGNOSTIC: Check available NNAPI devices
+        logAvailableNNAPIDevices()
+
         // Load model with delegates
         loadModel()
 
@@ -66,58 +69,122 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
     }
 
     /**
-     * Load TFLite model with multi-tier delegate fallback
+     * Log available NNAPI devices for diagnostics
+     */
+    private fun logAvailableNNAPIDevices() {
+        try {
+            // This requires API 29+, but your device is API 36 (Android 14)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                FileLogger.d(TAG, "Checking available NNAPI accelerators...")
+
+                // Try to get NNAPI device info via reflection
+                // (TFLite doesn't expose this directly, but NNAPI does)
+                try {
+                    val nnApiClass = Class.forName("android.app.NeuralNetworks")
+                    FileLogger.d(TAG, "NNAPI available on this device")
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "NNAPI class not found: ${e.message}")
+                }
+            } else {
+                FileLogger.w(TAG, "Device API < 29, NNAPI features limited")
+            }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "Could not check NNAPI devices: ${e.message}")
+        }
+    }
+
+    /**
+     * Load TFLite model with GPU-FIRST strategy
+     * GPU has better operator support for MediaPipe models than Exynos NPU
+     * Expected: 10-15ms on Mali-G68 (vs 75ms CPU, vs 3-5ms NPU if it worked)
      */
     private fun loadModel() {
         try {
+            FileLogger.section("Loading Landmark Model - GPU-FIRST Strategy")
             val modelBuffer = loadModelFile(context, MODEL_NAME)
+            FileLogger.d(TAG, "Model loaded: ${modelBuffer.capacity() / 1024}KB")
+
             val options = Interpreter.Options()
 
             // ═══════════════════════════════════════════════════════
-            // TIER 1: Try NNAPI (NPU preferred)
+            // STRATEGY 1: Try GPU FIRST (best compatibility)
             // ═══════════════════════════════════════════════════════
+            var delegateSuccess = false
+
             try {
-                nnApiDelegate = NnApiDelegate(
-                    NnApiDelegate.Options().apply {
-                        setExecutionPreference(
-                            NnApiDelegate.Options.EXECUTION_PREFERENCE_FAST_SINGLE_ANSWER
-                        )
-                        setAllowFp16(true)
+                FileLogger.d(TAG, "Attempting GPU delegate (Mali-G68)...")
+
+                gpuDelegate = GpuDelegate(
+                    GpuDelegate.Options().apply {
+                        // Fast inference for real-time
+                        setInferencePreference(GpuDelegate.Options.INFERENCE_PREFERENCE_FAST_SINGLE_ANSWER)
+
+                        // Allow FP16 for better performance
+                        setPrecisionLossAllowed(true)
+
+                        // Enable all optimizations
+                        setQuantizedModelsAllowed(true)
                     }
                 )
-                options.addDelegate(nnApiDelegate)
-                actualBackend = "NNAPI (NPU preferred)"
-                Log.d(TAG, "✓ Using NNAPI delegate (NPU preferred)")
+
+                options.addDelegate(gpuDelegate)
+                actualBackend = "GPU (Mali-G68 MP5)"
+                FileLogger.i(TAG, "✓ GPU delegate created successfully")
+                delegateSuccess = true
 
             } catch (e: Exception) {
-                Log.w(TAG, "NNAPI delegate failed: ${e.message}")
+                FileLogger.w(TAG, "GPU delegate failed: ${e.message}")
+                actualBackend = "GPU Failed"
+            }
 
-                // ═══════════════════════════════════════════════════════
-                // TIER 2: Try GPU Delegate
-                // ═══════════════════════════════════════════════════════
+            // ═══════════════════════════════════════════════════════
+            // STRATEGY 2: If GPU failed, try NNAPI (NPU)
+            // ═══════════════════════════════════════════════════════
+            if (!delegateSuccess) {
                 try {
-                    gpuDelegate = GpuDelegate()
-                    options.addDelegate(gpuDelegate)
-                    actualBackend = "GPU (OpenGL)"
-                    Log.d(TAG, "✓ Using GPU delegate (fallback)")
+                    FileLogger.d(TAG, "Attempting NNAPI delegate (fallback)...")
 
-                } catch (e2: Exception) {
-                    Log.w(TAG, "GPU delegate failed: ${e2.message}")
+                    nnApiDelegate = NnApiDelegate(
+                        NnApiDelegate.Options().apply {
+                            // Use SUSTAINED_SPEED to prefer NPU over CPU
+                            setExecutionPreference(
+                                NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED
+                            )
+                            setAllowFp16(true)
+                            setUseNnapiCpu(false)  // Don't fall back to NNAPI CPU
+                        }
+                    )
 
-                    // ═══════════════════════════════════════════════════════
-                    // TIER 3: CPU with threading
-                    // ═══════════════════════════════════════════════════════
-                    options.setNumThreads(4)
-                    actualBackend = "CPU (4 threads)"
-                    Log.d(TAG, "✓ Using CPU with 4 threads (fallback)")
+                    options.addDelegate(nnApiDelegate)
+                    actualBackend = "NNAPI (NPU attempt)"
+                    FileLogger.i(TAG, "✓ NNAPI delegate created")
+                    delegateSuccess = true
+
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "NNAPI delegate failed: ${e.message}")
+                    actualBackend = "NNAPI Failed"
                 }
             }
 
+            // ═══════════════════════════════════════════════════════
+            // STRATEGY 3: CPU fallback with threading
+            // ═══════════════════════════════════════════════════════
+            if (!delegateSuccess) {
+                FileLogger.w(TAG, "All delegates failed, using CPU")
+                options.setNumThreads(4)
+                actualBackend = "CPU (4 threads)"
+            }
+
+            // Create interpreter
+            FileLogger.d(TAG, "Creating TFLite interpreter...")
             interpreter = Interpreter(modelBuffer, options)
-            Log.d(TAG, "✓ Model loaded: ${modelBuffer.capacity() / 1024}KB")
+            FileLogger.i(TAG, "✓ Interpreter created on: $actualBackend")
+
+            Log.d(TAG, "✓ Model loaded on $actualBackend")
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model", e)
+            FileLogger.e(TAG, "CRITICAL: Model loading failed!", e)
             throw e
         }
     }
