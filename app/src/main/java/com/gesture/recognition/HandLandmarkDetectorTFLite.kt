@@ -120,6 +120,15 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
                 FileLogger.i(TAG, "✓ GPU delegate created successfully")
                 delegateSuccess = true
 
+            } catch (e: NoClassDefFoundError) {
+                // GPU delegate library has missing classes
+                FileLogger.e(TAG, "GPU delegate missing classes: ${e.message}")
+                FileLogger.w(TAG, "GPU library may be incompatible with this TFLite version")
+                actualBackend = "GPU Failed (NoClassDefFoundError)"
+            } catch (e: UnsatisfiedLinkError) {
+                // GPU native library missing
+                FileLogger.e(TAG, "GPU native library error: ${e.message}")
+                actualBackend = "GPU Failed (UnsatisfiedLinkError)"
             } catch (e: Exception) {
                 FileLogger.w(TAG, "GPU delegate failed: ${e.message}")
                 FileLogger.w(TAG, "GPU error type: ${e.javaClass.simpleName}")
