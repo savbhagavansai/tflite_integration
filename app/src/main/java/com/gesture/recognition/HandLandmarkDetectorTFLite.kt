@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.util.Log
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.FileInputStream
@@ -94,54 +95,62 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
     }
 
     /**
-     * Load TFLite model with GPU-FIRST strategy
-     * GPU has better operator support for MediaPipe models than Exynos NPU
-     * Expected: 10-15ms on Mali-G68 (vs 75ms CPU, vs 3-5ms NPU if it worked)
+     * Load TFLite model - GPU-FIRST with CompatibilityList (TFLite 2.14.0)
      */
     private fun loadModel() {
         try {
-            FileLogger.section("Loading Landmark Model - GPU-FIRST Strategy")
+            FileLogger.section("Loading Landmark Model - GPU Strategy")
             val modelBuffer = loadModelFile(context, MODEL_NAME)
             FileLogger.d(TAG, "Model loaded: ${modelBuffer.capacity() / 1024}KB")
 
             val options = Interpreter.Options()
-
-            // ═══════════════════════════════════════════════════════
-            // STRATEGY 1: Try GPU FIRST (best compatibility)
-            // ═══════════════════════════════════════════════════════
             var delegateSuccess = false
 
+            // ═══════════════════════════════════════════════════════
+            // STRATEGY 1: Try GPU using CompatibilityList (correct API)
+            // ═══════════════════════════════════════════════════════
             try {
-                FileLogger.d(TAG, "Attempting GPU delegate (Mali-G68)...")
+                FileLogger.d(TAG, "Checking GPU compatibility...")
+                val compatList = CompatibilityList()
 
-                // FIXED: Use simple GpuDelegate() constructor for TFLite 2.14.0
-                gpuDelegate = GpuDelegate()
+                if (compatList.isDelegateSupportedOnThisDevice) {
+                    FileLogger.d(TAG, "GPU delegate supported on this device")
+                    FileLogger.d(TAG, "Creating GPU delegate...")
 
-                options.addDelegate(gpuDelegate)
-                actualBackend = "GPU (Mali-G68 MP5)"
-                FileLogger.i(TAG, "✓ GPU delegate created successfully")
-                delegateSuccess = true
+                    // Use CompatibilityList to create delegate (CORRECT for 2.14.0)
+                    val delegateOptions = compatList.bestOptionsForThisDevice
+                    gpuDelegate = GpuDelegate(delegateOptions)
+
+                    options.addDelegate(gpuDelegate)
+                    actualBackend = "GPU (Mali-G68 MP5)"
+                    FileLogger.i(TAG, "✓ GPU delegate created successfully")
+                    delegateSuccess = true
+
+                } else {
+                    FileLogger.w(TAG, "GPU delegate not supported on this device")
+                    actualBackend = "GPU Not Supported"
+                }
 
             } catch (e: Exception) {
                 FileLogger.w(TAG, "GPU delegate failed: ${e.message}")
+                FileLogger.w(TAG, "Exception: ${e.javaClass.simpleName}")
                 actualBackend = "GPU Failed"
             }
 
             // ═══════════════════════════════════════════════════════
-            // STRATEGY 2: If GPU failed, try NNAPI (NPU)
+            // STRATEGY 2: Try NNAPI (if GPU failed)
             // ═══════════════════════════════════════════════════════
             if (!delegateSuccess) {
                 try {
-                    FileLogger.d(TAG, "Attempting NNAPI delegate (fallback)...")
+                    FileLogger.d(TAG, "Attempting NNAPI delegate...")
 
                     nnApiDelegate = NnApiDelegate(
                         NnApiDelegate.Options().apply {
-                            // Use SUSTAINED_SPEED to prefer NPU over CPU
                             setExecutionPreference(
                                 NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED
                             )
                             setAllowFp16(true)
-                            setUseNnapiCpu(false)  // Don't fall back to NNAPI CPU
+                            setUseNnapiCpu(false)
                         }
                     )
 
@@ -157,12 +166,22 @@ class HandLandmarkDetectorTFLite(private val context: Context) {
             }
 
             // ═══════════════════════════════════════════════════════
-            // STRATEGY 3: CPU fallback with threading
+            // STRATEGY 3: CPU with XNNPACK optimization
             // ═══════════════════════════════════════════════════════
             if (!delegateSuccess) {
-                FileLogger.w(TAG, "All delegates failed, using CPU")
+                FileLogger.w(TAG, "All delegates failed, using optimized CPU")
+
+                try {
+                    options.setUseXNNPACK(true)
+                    FileLogger.i(TAG, "✓ XNNPACK enabled")
+                    actualBackend = "CPU (XNNPACK)"
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "XNNPACK not available: ${e.message}")
+                    actualBackend = "CPU (standard)"
+                }
+
                 options.setNumThreads(4)
-                actualBackend = "CPU (4 threads)"
+                FileLogger.d(TAG, "CPU threads: 4")
             }
 
             // Create interpreter
